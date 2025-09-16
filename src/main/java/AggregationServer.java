@@ -7,18 +7,21 @@ import java.util.ArrayList;
 import com.google.gson.Gson;
 
 public class AggregationServer {
-    private static ServerSocket serverSocket;
-    private static ArrayList<RequestBody> updates_list = new ArrayList<>();
-    private static int server_lamport_clock = 0;
+    protected static ServerSocket serverSocket;
+    protected static ArrayList<RequestBody> updates_list = new ArrayList<>();
+    protected static int server_lamport_clock = 0;
     private static final Object lamport_lock = new Object();
     private static final Object array_lock = new Object();
 
     public static void main(String[] args) throws IOException { // creates a server socket, then enters a loop of accepting connections.
+//        System.out.println("ive started");
         if (args.length != 0){
             serverSocket = new ServerSocket(Integer.parseInt(args[0]));
+            System.out.println(serverSocket.getLocalSocketAddress());
         }
         else {
             serverSocket = new ServerSocket(4567);
+            System.out.println(serverSocket.getLocalSocketAddress());
         }
         while (true){
             new ClientHandler(serverSocket.accept()).start(); // spawns a thread to deal with each incoming connection.
@@ -31,14 +34,14 @@ public class AggregationServer {
         private  BufferedReader in;
 
         public ClientHandler(Socket new_socket){ // initialisation
-            System.out.println("thread spawned");
+//            System.out.println("thread spawned");
             this.socket = new_socket;
-            System.out.println("socket assigned");
+//            System.out.println("socket assigned");
         }
 
         public void run() {
             try {
-                System.out.println("Running");
+//                System.out.println("Running");
                 out = new PrintWriter(socket.getOutputStream(), true);
                 in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
@@ -46,12 +49,12 @@ public class AggregationServer {
                 Gson gson = new Gson();
 
                 while (true) { // thread will loop forever accepting requests from its content server or get client. will only exit on an exception
-                    System.out.println("lamport time: " + server_lamport_clock);
+//                    System.out.println("lamport time: " + server_lamport_clock);
                     input_line = in.readLine();
-                    System.out.println("input line: " + input_line);
+//                    System.out.println("input line: " + input_line);
                     if (Objects.equals(input_line, "PUT /weather.json HTTP/1.1")) { // goes to put handler if the message is a put request
                         handlePut();
-                    } else if (input_line.startsWith("GET")) { // goes to get handler if the message is a get request
+                    } else if (input_line.startsWith("GET /")) { // goes to get handler if the message is a get request
                         handleGet(input_line);
                     } else { // sends a 400 response to any process that sends it a request other than PUT or GET
                         RequestBody response_object = new RequestBody();
@@ -65,30 +68,31 @@ public class AggregationServer {
             }
         }
 
-        private void handlePut() throws IOException { // method handles put requests
+        protected void handlePut() throws IOException { // method handles put requests
             System.out.printf("handling PUT\n");
             String input_line;
             Gson gson = new Gson();
             input_line = getRequestBody();
             RequestBody update = gson.fromJson(input_line, RequestBody.class);
-            checkClock(update.req_lamport_timestamp);
-            if (input_line == null) { // empty put requests get a 500 response
+            if (Objects.equals(input_line, "")) { // empty put requests get a 500 response
                 RequestBody response_object = new RequestBody();
                 response_object.req_lamport_timestamp = iterateClock();
                 String response_body_json = gson.toJson(response_object);
                 out.println("HTTP/1.1 500 Internal Server Error\r\n\r\n" + response_body_json);
             }
             else { // a sensible update with content is handled by calling the pushToArray function. Response is sent.
+                checkClock(update.req_lamport_timestamp);
                 pushToArray(update);
                 RequestBody response_object = new RequestBody();
                 response_object.req_lamport_timestamp = iterateClock();
                 String response_body_json = gson.toJson(response_object);
                 out.println("HTTP/1.1 200 OK\r\n\r\n" + response_body_json);
+//                System.out.println(updates_list.get(0).req_lamport_timestamp);
             }
 
         }
 
-        private void handleGet(String request_line) throws IOException { // method handles get requests
+        protected void handleGet(String request_line) throws IOException { // method handles get requests
             System.out.println("handling GET\n");
             Gson gson = new Gson();
             String request_body = getRequestBody();
@@ -120,7 +124,7 @@ public class AggregationServer {
             }
         }
 
-        private String getRequestBody() throws IOException { // this method skips past the HTTP headers until it gets to the body (json) of the request/reply. It uses the fact that HTTP requests have a blank line between the headers and body.
+        protected String getRequestBody() throws IOException { // this method skips past the HTTP headers until it gets to the body (json) of the request/reply. It uses the fact that HTTP requests have a blank line between the headers and body.
             String input_line;
             while (!Objects.equals(input_line = in.readLine(), "")) {
                 continue;
@@ -128,21 +132,21 @@ public class AggregationServer {
             return in.readLine();
         }
 
-        private int iterateClock(){ // this method iterates the clock atomically when a local event should update the clock (i.e. before sending a message) it returns the value of the clock when it's done, so that value can be used in the function without fear of a race condition (accurately timestamping the logical order of the operation depending on that lamport update without being affected by other threads' updates.)
+        protected int iterateClock(){ // this method iterates the clock atomically when a local event should update the clock (i.e. before sending a message) it returns the value of the clock when it's done, so that value can be used in the function without fear of a race condition (accurately timestamping the logical order of the operation depending on that lamport update without being affected by other threads' updates.)
             synchronized (lamport_lock){
                 server_lamport_clock += 1;
                 return server_lamport_clock;
             }
         }
 
-        private int checkClock(int incoming_clock){ // This method will update the lamport clock in the event of the server receiving an update from a client or content server. it returns the value of the clock when it's done, so that value can be used in the function without fear of a race condition (accurately timestamping the logical order of the operation depending on that lamport update without being affected by other threads' updates.)
+        protected int checkClock(int incoming_clock){ // This method will update the lamport clock in the event of the server receiving an update from a client or content server. it returns the value of the clock when it's done, so that value can be used in the function without fear of a race condition (accurately timestamping the logical order of the operation depending on that lamport update without being affected by other threads' updates.)
             synchronized (lamport_lock){
                 server_lamport_clock = Math.max(incoming_clock, server_lamport_clock) + 1;
                 return server_lamport_clock;
             }
         }
 
-        private void pushToArray(RequestBody new_element){ // This method pushes new elements to the array that stores the weather data. It uses a synchronized block locked with the object array_lock, which it shares with other methods that operate on this array, to ensure race conditions are avoided.
+        protected void pushToArray(RequestBody new_element){ // This method pushes new elements to the array that stores the weather data. It uses a synchronized block locked with the object array_lock, which it shares with other methods that operate on this array, to ensure race conditions are avoided.
             synchronized (array_lock){
                 updates_list.add(new_element);
                 iterateClock();
@@ -166,7 +170,7 @@ public class AggregationServer {
             }
         }
 
-        private RequestBody readArray(int request_timestamp){ // this method is used to read the array and select elements which are older than the GET client's timestamp
+        protected RequestBody readArray(int request_timestamp){ // this method is used to read the array and select elements which are older than the GET client's timestamp
             ArrayList<WeatherUpdate> sendable_updates = new ArrayList<>();
             RequestBody res_body = new RequestBody();
             synchronized (array_lock){
@@ -181,7 +185,7 @@ public class AggregationServer {
             return res_body;
         }
 
-        private RequestBody selectiveReadArray(int request_timestamp, String target_id){ // this method works as above, but also filters elements for a particular station id.
+        protected RequestBody selectiveReadArray(int request_timestamp, String target_id){ // this method works as above, but also filters elements for a particular station id.
             ArrayList<WeatherUpdate> sendable_updates = new ArrayList<>();
             RequestBody res_body = new RequestBody();
             synchronized (array_lock){

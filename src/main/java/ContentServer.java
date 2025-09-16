@@ -12,8 +12,8 @@ public class ContentServer {
     private static Socket socket;
     private static BufferedReader in;
     private static PrintWriter out;
-    private static  int lam_clock = 0;
-    private static int retry_count;
+    protected static  int lam_clock = 0;
+    protected static int retry_count = 0;
 
     public static void main(String[] args) throws IOException, ExecutionControl.NotImplementedException, InterruptedException {
         // assuming for now that the input will take the form ip:port and that ip will be localhost

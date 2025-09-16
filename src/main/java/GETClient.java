@@ -16,8 +16,8 @@ public class GETClient {
     private static BufferedReader in;
     private static PrintWriter out;
     private static String target_path;
-    private static int lam_clock = 0;
-    private static int retry_count;
+    protected static int lam_clock = 0;
+    protected static int retry_count = 0;
 
     public static void main(String[] args) throws IOException, InterruptedException {
         Gson gson = new Gson();
